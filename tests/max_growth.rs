@@ -115,7 +115,9 @@ fn forced_geometry_stays_maximum_while_colors_and_streaks_remain_live() {
     let alpha = |frame: &git_koi::render::KoiFrame| {
         frame
             .as_rgba_bytes()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| p[3])
             .collect::<Vec<_>>()
     };
