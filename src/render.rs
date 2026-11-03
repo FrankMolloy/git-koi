@@ -103,15 +103,36 @@ pub fn render_swim_frame_with_growth(
     frame_index: u32,
     force_max_growth: bool,
 ) -> KoiFrame {
+    render_swim_frame_with_motion(
+        koi_development,
+        koi_body,
+        behavior,
+        frame_index,
+        force_max_growth,
+        false,
+    )
+}
+
+/// Render with optional wider drift, fitted to the canvas without resizing the koi.
+/// Anatomy, activity-selected behavior, fin beats and loop timing stay unchanged.
+pub fn render_swim_frame_with_motion(
+    koi_development: &KoiDevelopment,
+    koi_body: KoiBody,
+    behavior: Behavior,
+    frame_index: u32,
+    force_max_growth: bool,
+    extra_swim_motion: bool,
+) -> KoiFrame {
     let koi_anatomy = growth_anatomy(koi_development, force_max_growth);
     let swim_pose = calculate_swim_pose(behavior, frame_index);
     let pose_center = match swim_pose.course {
-        Course::Lap { .. } => [0.0, 0.0],
-        Course::Hover { drift_pixels, .. } => {
-            let hover_fit = fit_hover_loop(behavior, &koi_anatomy);
+        Course::Lap { .. } if !extra_swim_motion => [0.0, 0.0],
+        _ => {
+            let drift_pixels = frame_drift(behavior, frame_index, extra_swim_motion);
+            let motion_fit = fit_motion_loop(behavior, &koi_anatomy, extra_swim_motion);
             [0, 1].map(|axis_index| {
-                hover_fit.sweep_center[axis_index]
-                    - hover_fit.drift_scales[axis_index] * drift_pixels[axis_index]
+                motion_fit.sweep_center[axis_index]
+                    - motion_fit.drift_scales[axis_index] * drift_pixels[axis_index]
             })
         }
     };
@@ -131,16 +152,44 @@ enum Framing {
     At([f64; 2]),
 }
 
-/// One framing for a whole hovering loop.
-struct HoverFit {
+/// Translation follows whole loop cycles, so the last-to-first transition stays smooth.
+fn frame_drift(behavior: Behavior, frame_index: u32, extra_swim_motion: bool) -> [f64; 2] {
+    match calculate_swim_pose(behavior, frame_index).course {
+        Course::Hover { drift_pixels, .. } => {
+            if !extra_swim_motion {
+                drift_pixels
+            } else {
+                let gains = if behavior == Behavior::DeepRest {
+                    [2.0, 3.0]
+                } else {
+                    [3.0, 10.0]
+                };
+                [0, 1].map(|axis| drift_pixels[axis] * gains[axis])
+            }
+        }
+        Course::Lap { .. } if extra_swim_motion => {
+            let phase = TAU * f64::from(frame_index % frame_count(behavior))
+                / f64::from(frame_count(behavior));
+            [10.0 * phase.sin(), 10.0 * (2.0 * phase).sin()]
+        }
+        Course::Lap { .. } => [0.0; 2],
+    }
+}
+
+/// One fixed framing for a whole motion loop.
+struct MotionFit {
     sweep_center: [f64; 2],
     /// Shares of the pose's drift that keep every frame inside, from zero through one.
     drift_scales: [f64; 2],
 }
 
-/// Center a hovering loop on everything the koi covers across its frames, then shrink
+/// Center a motion loop on everything the koi covers across its frames, then shrink
 /// the drift on each axis only as far as needed to keep every frame inside the frame.
-fn fit_hover_loop(behavior: Behavior, koi_anatomy: &KoiAnatomy) -> HoverFit {
+fn fit_motion_loop(
+    behavior: Behavior,
+    koi_anatomy: &KoiAnatomy,
+    extra_swim_motion: bool,
+) -> MotionFit {
     // Room for the outline, a clear pixel at the frame edge, and rounding.
     const FIT_MARGIN_PIXELS: f64 = 2.5;
     let frame_bounds: Vec<([[f64; 2]; 2], [f64; 2])> = (0..frame_count(behavior))
@@ -159,10 +208,7 @@ fn fit_hover_loop(behavior: Behavior, koi_anatomy: &KoiAnatomy) -> HoverFit {
                         max_corner[axis_index].max(whisker_point[axis_index] + 1.0);
                 }
             }
-            let drift_pixels = match swim_pose.course {
-                Course::Hover { drift_pixels, .. } => drift_pixels,
-                Course::Lap { .. } => [0.0; 2],
-            };
+            let drift_pixels = frame_drift(behavior, frame_index, extra_swim_motion);
             ([min_corner, max_corner], drift_pixels)
         })
         .collect();
@@ -170,7 +216,7 @@ fn fit_hover_loop(behavior: Behavior, koi_anatomy: &KoiAnatomy) -> HoverFit {
         f64::from(FRAME_WIDTH_PIXELS),
         f64::from(FRAME_HEIGHT_PIXELS),
     ];
-    let mut hover_fit = HoverFit {
+    let mut motion_fit = MotionFit {
         sweep_center: [0.0; 2],
         drift_scales: [1.0; 2],
     };
@@ -197,10 +243,10 @@ fn fit_hover_loop(behavior: Behavior, koi_anatomy: &KoiAnatomy) -> HoverFit {
                 drift_scale = drift_scale.min(room / drift.abs());
             }
         }
-        hover_fit.sweep_center[axis_index] = sweep_center;
-        hover_fit.drift_scales[axis_index] = drift_scale.clamp(0.0, 1.0);
+        motion_fit.sweep_center[axis_index] = sweep_center;
+        motion_fit.drift_scales[axis_index] = drift_scale.clamp(0.0, 1.0);
     }
-    hover_fit
+    motion_fit
 }
 
 fn render_pose(

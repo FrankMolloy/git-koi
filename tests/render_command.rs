@@ -183,6 +183,7 @@ fn fresh_directory(directory_name: &str) -> PathBuf {
 fn run_git_koi(arguments: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_git-koi"))
         .env_remove("FORCE_MAX_GROWTH")
+        .env_remove("EXTRA_SWIM_MOTION")
         .args(arguments)
         .output()
         .unwrap()

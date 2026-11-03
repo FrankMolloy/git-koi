@@ -85,6 +85,7 @@ fn command_override_renders_maximum_and_rejects_invalid_values() {
                 "gold",
             ])
             .env("FORCE_MAX_GROWTH", value)
+            .env_remove("EXTRA_SWIM_MOTION")
             .output()
             .unwrap()
     };

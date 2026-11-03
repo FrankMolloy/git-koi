@@ -22,6 +22,11 @@ inputs:
     description:
       Use maximum anatomy while retaining genuine colors, streaks and behavior.
     default: "false"
+  extra-swim-motion:
+    description:
+      Wider canvas-fitted drift in the GIF, keeping anatomy and activity
+      behavior.
+    default: "false"
   token:
     description:
       Token for reading the account's public data; the built-in token is enough.
@@ -45,6 +50,7 @@ runs:
     - name: Render the koi
       shell: bash
       env:
+        EXTRA_SWIM_MOTION: ${{ inputs.extra-swim-motion }}
         FORCE_MAX_GROWTH: ${{ inputs.force-max-growth }}
         KOI_BODY: ${{ inputs.body }}
         KOI_OUTPUT_DIR: ${{ inputs.output-dir }}

@@ -13,7 +13,7 @@ use git_koi::history::AccountSnapshot;
 use git_koi::koi::derive_koi_development;
 use git_koi::motion::frame_count;
 use git_koi::output::{encode_gif, encode_png, encode_preview_html};
-use git_koi::render::{KoiFrame, render_koi_with_growth, render_swim_frame_with_growth};
+use git_koi::render::{KoiFrame, render_koi_with_growth, render_swim_frame_with_motion};
 
 const USAGE: &str = "Usage: git-koi collect LOGIN [--output FILE]
        git-koi render SNAPSHOT --output-dir DIR [--body BODY]
@@ -28,6 +28,7 @@ observation date, koi.png is the still koi, and preview.html shows both on light
 dark backgrounds. BODY is white (the default), black, asagi, tea, gold, or platinum.
 Set FORCE_MAX_GROWTH=true to use maximum anatomy while retaining real activity and colors.
 Unset it or set false for normal growth. Other values are rejected.
+Set EXTRA_SWIM_MOTION=true for wider canvas-fitted movement in the GIF only.
 The files are replaced only after all of them render.
 Errors go to stderr and exit 1; invalid usage exits 2.
 Examples: git-koi collect octocat --output snapshot.json
@@ -153,15 +154,22 @@ fn render_day(snapshot_path: &Path, koi_body: KoiBody) -> Result<RenderedDay, St
         Ok(value) if value == "true" => true,
         _ => return Err("FORCE_MAX_GROWTH must be true or false".to_owned()),
     };
+    let extra_swim_motion = match env::var("EXTRA_SWIM_MOTION") {
+        Err(env::VarError::NotPresent) => false,
+        Ok(value) if value == "false" => false,
+        Ok(value) if value == "true" => true,
+        _ => return Err("EXTRA_SWIM_MOTION must be true or false".to_owned()),
+    };
     let behavior = select_behavior(&koi_development);
     let swim_frames: Vec<KoiFrame> = (0..frame_count(behavior))
         .map(|frame_index| {
-            render_swim_frame_with_growth(
+            render_swim_frame_with_motion(
                 &koi_development,
                 koi_body,
                 behavior,
                 frame_index,
                 force_max_growth,
+                extra_swim_motion,
             )
         })
         .collect();
