@@ -22,7 +22,8 @@ use std::f64::consts::{PI, TAU};
 use crate::behavior::Behavior;
 use crate::coat::{KoiBody, KoiCoat, WHITE_RAMP};
 use crate::koi::{
-    ADULT_CONTRIBUTIONS, KoiDevelopment, YOUNG_SHAPE_CONTRIBUTIONS, calculate_growth_fraction,
+    ADULT_CONTRIBUTIONS, KoiDevelopment, MAX_GROWTH_CONTRIBUTIONS, YOUNG_SHAPE_CONTRIBUTIONS,
+    calculate_growth_fraction,
 };
 use crate::motion::{Course, STILL_POSE, SwimPose, calculate_swim_pose, frame_count};
 
@@ -58,7 +59,16 @@ impl KoiFrame {
 /// observation date. Identical inputs produce identical pixels without I/O, clock
 /// reads, or input mutation.
 pub fn render_koi(koi_development: &KoiDevelopment, koi_body: KoiBody) -> KoiFrame {
-    let koi_anatomy = calculate_anatomy(koi_development.total_contributions);
+    render_koi_with_growth(koi_development, koi_body, false)
+}
+
+/// Render a still with optional maximum anatomy; all activity and colors stay genuine.
+pub fn render_koi_with_growth(
+    koi_development: &KoiDevelopment,
+    koi_body: KoiBody,
+    force_max_growth: bool,
+) -> KoiFrame {
+    let koi_anatomy = growth_anatomy(koi_development, force_max_growth);
     render_pose(
         koi_development,
         koi_body,
@@ -82,7 +92,18 @@ pub fn render_swim_frame(
     behavior: Behavior,
     frame_index: u32,
 ) -> KoiFrame {
-    let koi_anatomy = calculate_anatomy(koi_development.total_contributions);
+    render_swim_frame_with_growth(koi_development, koi_body, behavior, frame_index, false)
+}
+
+/// Render an animated frame with optional maximum anatomy, retaining the original pose.
+pub fn render_swim_frame_with_growth(
+    koi_development: &KoiDevelopment,
+    koi_body: KoiBody,
+    behavior: Behavior,
+    frame_index: u32,
+    force_max_growth: bool,
+) -> KoiFrame {
+    let koi_anatomy = growth_anatomy(koi_development, force_max_growth);
     let swim_pose = calculate_swim_pose(behavior, frame_index);
     let pose_center = match swim_pose.course {
         Course::Lap { .. } => [0.0, 0.0],
@@ -640,6 +661,14 @@ const FIN_PAIRS: [FinPair; 3] = [
         direction_offsets: [&[0.39139, 0.3769, 0.39376], &[-0.62997, -0.48164, -0.32809]],
     },
 ];
+
+fn growth_anatomy(koi_development: &KoiDevelopment, force_max_growth: bool) -> KoiAnatomy {
+    calculate_anatomy(if force_max_growth {
+        MAX_GROWTH_CONTRIBUTIONS
+    } else {
+        koi_development.total_contributions
+    })
+}
 
 fn calculate_anatomy(total_contributions: u64) -> KoiAnatomy {
     const MIN_BODY_LENGTH_PIXELS: f64 = 37.5;

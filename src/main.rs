@@ -13,7 +13,7 @@ use git_koi::history::AccountSnapshot;
 use git_koi::koi::derive_koi_development;
 use git_koi::motion::frame_count;
 use git_koi::output::{encode_gif, encode_png, encode_preview_html};
-use git_koi::render::{KoiFrame, render_koi, render_swim_frame};
+use git_koi::render::{KoiFrame, render_koi_with_growth, render_swim_frame_with_growth};
 
 const USAGE: &str = "Usage: git-koi collect LOGIN [--output FILE]
        git-koi render SNAPSHOT --output-dir DIR [--body BODY]
@@ -26,6 +26,8 @@ Requires an authenticated GitHub CLI; in GitHub Actions, set GH_TOKEN to github.
 Render a collected SNAPSHOT into DIR: koi.gif swims the behavior chosen for its
 observation date, koi.png is the still koi, and preview.html shows both on light and
 dark backgrounds. BODY is white (the default), black, asagi, tea, gold, or platinum.
+Set FORCE_MAX_GROWTH=true to use maximum anatomy while retaining real activity and colors.
+Unset it or set false for normal growth. Other values are rejected.
 The files are replaced only after all of them render.
 Errors go to stderr and exit 1; invalid usage exits 2.
 Examples: git-koi collect octocat --output snapshot.json
@@ -145,14 +147,32 @@ fn render_day(snapshot_path: &Path, koi_body: KoiBody) -> Result<RenderedDay, St
         .map_err(|parse_error| format!("{}: {parse_error}", snapshot_path.display()))?;
     let koi_development = derive_koi_development(&account_snapshot)
         .map_err(|development_error| development_error.to_string())?;
+    let force_max_growth = match env::var("FORCE_MAX_GROWTH") {
+        Err(env::VarError::NotPresent) => false,
+        Ok(value) if value == "false" => false,
+        Ok(value) if value == "true" => true,
+        _ => return Err("FORCE_MAX_GROWTH must be true or false".to_owned()),
+    };
     let behavior = select_behavior(&koi_development);
     let swim_frames: Vec<KoiFrame> = (0..frame_count(behavior))
-        .map(|frame_index| render_swim_frame(&koi_development, koi_body, behavior, frame_index))
+        .map(|frame_index| {
+            render_swim_frame_with_growth(
+                &koi_development,
+                koi_body,
+                behavior,
+                frame_index,
+                force_max_growth,
+            )
+        })
         .collect();
     let gif_bytes =
         encode_gif(&swim_frames).map_err(|encoding_error| encoding_error.to_string())?;
-    let png_bytes = encode_png(&render_koi(&koi_development, koi_body))
-        .map_err(|encoding_error| encoding_error.to_string())?;
+    let png_bytes = encode_png(&render_koi_with_growth(
+        &koi_development,
+        koi_body,
+        force_max_growth,
+    ))
+    .map_err(|encoding_error| encoding_error.to_string())?;
     let caption = format!(
         "{} for {}, {} body",
         describe_behavior(behavior),
