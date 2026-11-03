@@ -74,3 +74,9 @@ Preview before publishing with the same snapshot and `FORCE_MAX_GROWTH=true`,
 leaving `--body` unset. Render once with `EXTRA_SWIM_MOTION=false`, then once
 with `true`, into separate directories. Compare both GIFs; their PNG files
 should match exactly.
+
+## Optional articulated patrol
+
+See [PATROL.md](PATROL.md) for the optional head-first U-turn path, wider
+canvas, local previews and behaviour tradeoffs. This mode is local and has not
+been published.

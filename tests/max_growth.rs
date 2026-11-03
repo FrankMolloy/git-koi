@@ -86,6 +86,7 @@ fn command_override_renders_maximum_and_rejects_invalid_values() {
             ])
             .env("FORCE_MAX_GROWTH", value)
             .env_remove("EXTRA_SWIM_MOTION")
+            .env_remove("PATROL_ANIMATION")
             .output()
             .unwrap()
     };

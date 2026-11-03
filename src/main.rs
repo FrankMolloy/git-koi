@@ -13,7 +13,9 @@ use git_koi::history::AccountSnapshot;
 use git_koi::koi::derive_koi_development;
 use git_koi::motion::frame_count;
 use git_koi::output::{encode_gif, encode_png, encode_preview_html};
-use git_koi::render::{KoiFrame, render_koi_with_growth, render_swim_frame_with_motion};
+use git_koi::render::{
+    KoiFrame, render_koi_with_growth, render_patrol_frame, render_swim_frame_with_motion,
+};
 
 const USAGE: &str = "Usage: git-koi collect LOGIN [--output FILE]
        git-koi render SNAPSHOT --output-dir DIR [--body BODY]
@@ -29,6 +31,7 @@ dark backgrounds. BODY is white (the default), black, asagi, tea, gold, or plati
 Set FORCE_MAX_GROWTH=true to use maximum anatomy while retaining real activity and colors.
 Unset it or set false for normal growth. Other values are rejected.
 Set EXTRA_SWIM_MOTION=true for wider canvas-fitted movement in the GIF only.
+Set PATROL_ANIMATION=true for a 16-second articulated patrol on a wider GIF canvas.
 The files are replaced only after all of them render.
 Errors go to stderr and exit 1; invalid usage exits 2.
 Examples: git-koi collect octocat --output snapshot.json
@@ -160,9 +163,28 @@ fn render_day(snapshot_path: &Path, koi_body: KoiBody) -> Result<RenderedDay, St
         Ok(value) if value == "true" => true,
         _ => return Err("EXTRA_SWIM_MOTION must be true or false".to_owned()),
     };
+    let patrol_animation = match env::var("PATROL_ANIMATION") {
+        Err(env::VarError::NotPresent) => false,
+        Ok(value) if value == "false" => false,
+        Ok(value) if value == "true" => true,
+        _ => return Err("PATROL_ANIMATION must be true or false".to_owned()),
+    };
     let behavior = select_behavior(&koi_development);
-    let swim_frames: Vec<KoiFrame> = (0..frame_count(behavior))
+    let loop_frames = if patrol_animation {
+        git_koi::patrol::PATROL_FRAME_COUNT
+    } else {
+        frame_count(behavior)
+    };
+    let swim_frames: Vec<KoiFrame> = (0..loop_frames)
         .map(|frame_index| {
+            if patrol_animation {
+                return render_patrol_frame(
+                    &koi_development,
+                    koi_body,
+                    frame_index,
+                    force_max_growth,
+                );
+            }
             render_swim_frame_with_motion(
                 &koi_development,
                 koi_body,
@@ -183,7 +205,11 @@ fn render_day(snapshot_path: &Path, koi_body: KoiBody) -> Result<RenderedDay, St
     .map_err(|encoding_error| encoding_error.to_string())?;
     let caption = format!(
         "{} for {}, {} body",
-        describe_behavior(behavior),
+        if patrol_animation {
+            "articulated patrol"
+        } else {
+            describe_behavior(behavior)
+        },
         koi_development.observed_on,
         name_body(koi_body)
     );

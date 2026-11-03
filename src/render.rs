@@ -32,13 +32,19 @@ pub const FRAME_WIDTH_PIXELS: u32 = 256;
 /// Height of the native canvas; the canvas is square.
 pub const FRAME_HEIGHT_PIXELS: u32 = FRAME_WIDTH_PIXELS;
 
-/// A renderer-owned, fixed-size frame with row-major RGBA pixels.
+/// A renderer-owned frame with row-major RGBA pixels and a fixed 256-pixel height.
 #[derive(Debug, Eq, PartialEq)]
 pub struct KoiFrame {
     rgba_pixels: Vec<[u8; 4]>,
+    width_pixels: u32,
 }
 
 impl KoiFrame {
+    /// Native canvas width; ordinary frames are square, patrol frames are wider.
+    pub fn width_pixels(&self) -> u32 {
+        self.width_pixels
+    }
+
     /// The pixels as bytes, row by row from the top left, four channels per pixel: red,
     /// green, blue, alpha. The length is the canvas area times four.
     pub fn as_rgba_bytes(&self) -> &[u8] {
@@ -48,7 +54,10 @@ impl KoiFrame {
     /// Build a frame from chosen pixels, for encoder tests that need colors no koi has.
     #[cfg(test)]
     pub(crate) fn from_rgba_pixels(rgba_pixels: Vec<[u8; 4]>) -> Self {
-        Self { rgba_pixels }
+        Self {
+            rgba_pixels,
+            width_pixels: FRAME_WIDTH_PIXELS,
+        }
     }
 }
 
@@ -143,6 +152,39 @@ pub fn render_swim_frame_with_motion(
         &swim_pose,
         Framing::At(pose_center),
     )
+}
+
+/// Render a true articulated patrol using upstream cruising fins, waves and shading.
+/// The still PNG is unaffected. The wider canvas preserves maximum native anatomy.
+pub fn render_patrol_frame(
+    koi_development: &KoiDevelopment,
+    koi_body: KoiBody,
+    frame_index: u32,
+    force_max_growth: bool,
+) -> KoiFrame {
+    let anatomy = growth_anatomy(koi_development, force_max_growth);
+    let pose = calculate_swim_pose(Behavior::Cruise, frame_index);
+    let spine = build_patrol_spine(&anatomy, &pose, frame_index);
+    render_pose_with_spine(
+        koi_development,
+        koi_body,
+        &anatomy,
+        &pose,
+        Framing::At([0.0, 0.0]),
+        spine,
+        crate::patrol::PATROL_WIDTH_PIXELS,
+    )
+}
+
+fn build_patrol_spine(anatomy: &KoiAnatomy, pose: &SwimPose, frame_index: u32) -> Vec<CurvePoint> {
+    let count = anatomy.body_length_pixels.round() as usize;
+    let centers: Vec<_> = (0..count)
+        .map(|i| CurvePoint {
+            position: crate::patrol::spine_position(frame_index, i as f64),
+            half_width_pixels: calculate_body_half_width(i as f64 / count as f64, anatomy).max(1.3),
+        })
+        .collect();
+    apply_body_wave(anatomy, pose, &centers)
 }
 
 /// Where the view is centered: on the koi itself for the still image, or at a point
@@ -256,10 +298,30 @@ fn render_pose(
     swim_pose: &SwimPose,
     framing: Framing,
 ) -> KoiFrame {
+    let body_spine = build_spine(koi_anatomy, swim_pose);
+    render_pose_with_spine(
+        koi_development,
+        koi_body,
+        koi_anatomy,
+        swim_pose,
+        framing,
+        body_spine,
+        FRAME_WIDTH_PIXELS,
+    )
+}
+
+fn render_pose_with_spine(
+    koi_development: &KoiDevelopment,
+    koi_body: KoiBody,
+    koi_anatomy: &KoiAnatomy,
+    swim_pose: &SwimPose,
+    framing: Framing,
+    body_spine: Vec<CurvePoint>,
+    canvas_width: u32,
+) -> KoiFrame {
     let koi_coat = KoiCoat::new(koi_development, koi_body, |along_fraction| {
         calculate_body_half_width(along_fraction, koi_anatomy)
     });
-    let body_spine = build_spine(koi_anatomy, swim_pose);
     let fin_curves = build_fins(&body_spine, koi_anatomy, swim_pose);
     let [min_corner, max_corner] = measure_curve_bounds(&body_spine, &fin_curves);
     let pose_center = match framing {
@@ -273,11 +335,11 @@ fn render_pose(
         koi_anatomy,
         koi_coat: &koi_coat,
     };
-    let mut rgba_pixels = Vec::with_capacity((FRAME_WIDTH_PIXELS * FRAME_HEIGHT_PIXELS) as usize);
+    let mut rgba_pixels = Vec::with_capacity((canvas_width * FRAME_HEIGHT_PIXELS) as usize);
     for pixel_y in 0..FRAME_HEIGHT_PIXELS {
-        for pixel_x in 0..FRAME_WIDTH_PIXELS {
+        for pixel_x in 0..canvas_width {
             let sample_position = [
-                f64::from(pixel_x) + 0.5 - f64::from(FRAME_WIDTH_PIXELS) / 2.0 + pose_center[0],
+                f64::from(pixel_x) + 0.5 - f64::from(canvas_width) / 2.0 + pose_center[0],
                 f64::from(pixel_y) + 0.5 - f64::from(FRAME_HEIGHT_PIXELS) / 2.0 + pose_center[1],
             ];
             // Nothing outside the curves' bounds can be covered, so skip sampling it.
@@ -304,6 +366,7 @@ fn render_pose(
         koi_body,
         pose_center,
         swim_pose.mouth_opening,
+        canvas_width,
     );
     let fish_pixel_mask: Vec<bool> = rgba_pixels
         .iter()
@@ -311,8 +374,8 @@ fn render_pose(
         .collect();
     let whisker_points =
         calculate_whisker_points(&body_spine, koi_anatomy, swim_pose.whisker_sway_radians);
-    paint_whiskers(&mut rgba_pixels, &whisker_points, pose_center);
-    paint_outline(&mut rgba_pixels);
+    paint_whiskers(&mut rgba_pixels, &whisker_points, pose_center, canvas_width);
+    paint_outline(&mut rgba_pixels, canvas_width);
     if let Some(feeding_phase) = swim_pose.feeding_phase {
         paint_feeding(
             &mut rgba_pixels,
@@ -320,12 +383,21 @@ fn render_pose(
             koi_anatomy,
             pose_center,
             feeding_phase,
+            canvas_width,
         );
     }
     if swim_pose.depth > 0.0 {
-        paint_depth(&mut rgba_pixels, &fish_pixel_mask, swim_pose.depth);
+        paint_depth(
+            &mut rgba_pixels,
+            &fish_pixel_mask,
+            swim_pose.depth,
+            canvas_width,
+        );
     }
-    KoiFrame { rgba_pixels }
+    KoiFrame {
+        rgba_pixels,
+        width_pixels: canvas_width,
+    }
 }
 
 /// Where the mouth opens: on the snout's center line, just inside its front.
@@ -349,6 +421,7 @@ fn paint_mouth(
     koi_body: KoiBody,
     pose_center: [f64; 2],
     mouth_opening: f64,
+    canvas_width: u32,
 ) {
     const VISIBLE_OPENING: f64 = 0.1;
     const CLOSED_RADIUS_PIXELS: f64 = 0.8;
@@ -366,15 +439,12 @@ fn paint_mouth(
         mouth_opening.min(1.0),
     );
     let mouth_world = calculate_mouth_position(body_spine);
-    let frame_sizes = [
-        f64::from(FRAME_WIDTH_PIXELS),
-        f64::from(FRAME_HEIGHT_PIXELS),
-    ];
+    let frame_sizes = [f64::from(canvas_width), f64::from(FRAME_HEIGHT_PIXELS)];
     let mouth = [0, 1].map(|axis_index| {
         mouth_world[axis_index] - pose_center[axis_index] + frame_sizes[axis_index] / 2.0
     });
     let rim_color = koi_body.select_mouth_rim_color();
-    let frame_width = FRAME_WIDTH_PIXELS as usize;
+    let frame_width = canvas_width as usize;
     let first_y = (mouth[1] - radius_pixels).floor().max(0.0) as usize;
     let last_y = ((mouth[1] + radius_pixels).ceil() as usize).min(FRAME_HEIGHT_PIXELS as usize - 1);
     let first_x = (mouth[0] - radius_pixels).floor().max(0.0) as usize;
@@ -404,6 +474,7 @@ fn paint_feeding(
     koi_anatomy: &KoiAnatomy,
     pose_center: [f64; 2],
     feeding_phase: f64,
+    canvas_width: u32,
 ) {
     const RING_COUNT: usize = 3;
     const RING_WIDTH_PER_BODY_LENGTH: f64 = 0.3;
@@ -418,10 +489,7 @@ fn paint_feeding(
     const PELLET_COLORS: [[u8; 4]; 2] = [[228, 166, 114, 255], [184, 111, 80, 255]];
     // A clear pixel between the extras and the frame edge, plus rounding.
     const EDGE_MARGIN_PIXELS: f64 = 2.0;
-    let frame_sizes = [
-        f64::from(FRAME_WIDTH_PIXELS),
-        f64::from(FRAME_HEIGHT_PIXELS),
-    ];
+    let frame_sizes = [f64::from(canvas_width), f64::from(FRAME_HEIGHT_PIXELS)];
     let mouth_world = calculate_mouth_position(body_spine);
     let mouth = [0, 1].map(|axis_index| {
         mouth_world[axis_index] - pose_center[axis_index] + frame_sizes[axis_index] / 2.0
@@ -432,7 +500,7 @@ fn paint_feeding(
             .max(0.0)
     });
     let forward_direction = calculate_forward_direction(body_spine, 0);
-    let frame_width = FRAME_WIDTH_PIXELS as usize;
+    let frame_width = canvas_width as usize;
     let mut paint_water = |point: [f64; 2], color: [u8; 4], dither_limit: f64| {
         let [pixel_x, pixel_y] = point.map(f64::floor);
         if !(0.0..frame_sizes[0]).contains(&pixel_x) || !(0.0..frame_sizes[1]).contains(&pixel_y) {
@@ -499,7 +567,12 @@ fn paint_feeding(
 /// Under water the koi becomes a blue koi: each body and fin pixel maps its own
 /// brightness onto a water-blue scale, the whiskers and outline soften to deep blue,
 /// and a dithered share of each drops out, more for the outline.
-fn paint_depth(rgba_pixels: &mut [[u8; 4]], fish_pixel_mask: &[bool], depth: f64) {
+fn paint_depth(
+    rgba_pixels: &mut [[u8; 4]],
+    fish_pixel_mask: &[bool],
+    depth: f64,
+    canvas_width: u32,
+) {
     const DEEP_WATER: [f64; 3] = [18.0, 78.0, 137.0];
     const MID_WATER: [f64; 3] = [0.0, 153.0, 219.0];
     const SHALLOW_WATER: [f64; 3] = [190.0, 225.0, 245.0];
@@ -508,7 +581,7 @@ fn paint_depth(rgba_pixels: &mut [[u8; 4]], fish_pixel_mask: &[bool], depth: f64
     const OUTLINE_DROPOUT_PER_DEPTH: f64 = 0.45;
     const TINT_PER_DEPTH: f64 = 1.15;
     let tint = (depth * TINT_PER_DEPTH).min(1.0);
-    let frame_width = FRAME_WIDTH_PIXELS as usize;
+    let frame_width = canvas_width as usize;
     for (pixel_index, pixel_channels) in rgba_pixels.iter_mut().enumerate() {
         if pixel_channels[3] == 0 {
             continue;
@@ -805,8 +878,6 @@ fn smooth_step(fraction: f64) -> f64 {
 fn build_spine(koi_anatomy: &KoiAnatomy, swim_pose: &SwimPose) -> Vec<CurvePoint> {
     const HEADING_RADIANS: f64 = -0.08;
     const BEND_RADIANS: f64 = 0.35;
-    const WAVE_AMPLITUDE_FRACTION: f64 = 0.06;
-    const WAVE_CYCLES: f64 = 0.9;
     let body_length_pixels = koi_anatomy.body_length_pixels;
     let point_count = body_length_pixels.round() as usize;
     const MIN_HALF_WIDTH_PIXELS: f64 = 1.3;
@@ -856,10 +927,22 @@ fn build_spine(koi_anatomy: &KoiAnatomy, swim_pose: &SwimPose) -> Vec<CurvePoint
                 .collect()
         }
     };
+    apply_body_wave(koi_anatomy, swim_pose, &center_points)
+}
+
+fn apply_body_wave(
+    koi_anatomy: &KoiAnatomy,
+    swim_pose: &SwimPose,
+    center_points: &[CurvePoint],
+) -> Vec<CurvePoint> {
+    const WAVE_AMPLITUDE_FRACTION: f64 = 0.06;
+    const WAVE_CYCLES: f64 = 0.9;
+    let body_length_pixels = koi_anatomy.body_length_pixels;
+    let point_count = center_points.len();
     let mut body_spine = Vec::with_capacity(point_count);
     for (point_index, center_point) in center_points.iter().enumerate() {
         let along_fraction = point_index as f64 / point_count as f64;
-        let forward_direction = calculate_forward_direction(&center_points, point_index);
+        let forward_direction = calculate_forward_direction(center_points, point_index);
         let head_wave_fraction = 0.1;
         let wave_envelope =
             head_wave_fraction + (1.0 - head_wave_fraction) * along_fraction.powi(2);
@@ -977,14 +1060,18 @@ fn build_fin(
 
 /// Paint the whisker points. They fill only empty pixels and are painted before the
 /// outline, so they are outlined like the koi.
-fn paint_whiskers(rgba_pixels: &mut [[u8; 4]], whisker_points: &[[f64; 2]], pose_center: [f64; 2]) {
-    let frame_width = FRAME_WIDTH_PIXELS as usize;
+fn paint_whiskers(
+    rgba_pixels: &mut [[u8; 4]],
+    whisker_points: &[[f64; 2]],
+    pose_center: [f64; 2],
+    canvas_width: u32,
+) {
+    let frame_width = canvas_width as usize;
     for whisker_point in whisker_points {
-        let pixel_x =
-            (whisker_point[0] - pose_center[0] + f64::from(FRAME_WIDTH_PIXELS) / 2.0).floor();
+        let pixel_x = (whisker_point[0] - pose_center[0] + f64::from(canvas_width) / 2.0).floor();
         let pixel_y =
             (whisker_point[1] - pose_center[1] + f64::from(FRAME_HEIGHT_PIXELS) / 2.0).floor();
-        if !(0.0..f64::from(FRAME_WIDTH_PIXELS)).contains(&pixel_x)
+        if !(0.0..f64::from(canvas_width)).contains(&pixel_x)
             || !(0.0..f64::from(FRAME_HEIGHT_PIXELS)).contains(&pixel_y)
         {
             continue;
@@ -1272,9 +1359,9 @@ fn calculate_forward_direction(curve_points: &[CurvePoint], point_index: usize) 
     ]
 }
 
-fn paint_outline(rgba_pixels: &mut [[u8; 4]]) {
+fn paint_outline(rgba_pixels: &mut [[u8; 4]], canvas_width: u32) {
     let original_pixels = rgba_pixels.to_vec();
-    let frame_width = FRAME_WIDTH_PIXELS as usize;
+    let frame_width = canvas_width as usize;
     for (pixel_index, pixel_channels) in rgba_pixels.iter_mut().enumerate() {
         if original_pixels[pixel_index][3] != 0 {
             continue;
@@ -1340,6 +1427,7 @@ mod tests {
             koi_body,
             mouth_position,
             mouth_opening,
+            FRAME_WIDTH_PIXELS,
         );
         rgba_pixels
     }
@@ -1375,5 +1463,34 @@ mod tests {
         let half_open = count_painted(&paint_mouth_alone(KoiBody::White, 0.5));
         let wide_open = count_painted(&paint_mouth_alone(KoiBody::White, 1.0));
         assert!(0 < half_open && half_open < wide_open);
+    }
+
+    #[test]
+    fn the_complete_patrol_geometry_fits_the_canvas() {
+        let anatomy = calculate_anatomy(crate::koi::MAX_GROWTH_CONTRIBUTIONS);
+        for frame in 0..crate::patrol::PATROL_FRAME_COUNT {
+            let pose = calculate_swim_pose(Behavior::Cruise, frame);
+            let spine = build_patrol_spine(&anatomy, &pose, frame);
+            let fins = build_fins(&spine, &anatomy, &pose);
+            let [mut min, mut max] = measure_curve_bounds(&spine, &fins);
+            for point in calculate_whisker_points(&spine, &anatomy, pose.whisker_sway_radians) {
+                for axis in 0..2 {
+                    min[axis] = min[axis].min(point[axis]);
+                    max[axis] = max[axis].max(point[axis] + 1.0);
+                }
+            }
+            for axis in 0..2 {
+                let half = if axis == 0 {
+                    f64::from(crate::patrol::PATROL_WIDTH_PIXELS) / 2.0
+                } else {
+                    128.0
+                };
+                assert!(min[axis] + half > 2.0, "canvas minimum at {frame}");
+                assert!(
+                    max[axis] + half < half * 2.0 - 2.0,
+                    "canvas maximum at {frame}: axis={axis} min={min:?} max={max:?}"
+                );
+            }
+        }
     }
 }

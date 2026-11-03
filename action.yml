@@ -27,6 +27,10 @@ inputs:
       Wider canvas-fitted drift in the GIF, keeping anatomy and activity
       behavior.
     default: "false"
+  patrol-animation:
+    description:
+      Articulated 16-second back-and-forth patrol on a wider GIF canvas.
+    default: "false"
   token:
     description:
       Token for reading the account's public data; the built-in token is enough.
@@ -50,6 +54,7 @@ runs:
     - name: Render the koi
       shell: bash
       env:
+        PATROL_ANIMATION: ${{ inputs.patrol-animation }}
         EXTRA_SWIM_MOTION: ${{ inputs.extra-swim-motion }}
         FORCE_MAX_GROWTH: ${{ inputs.force-max-growth }}
         KOI_BODY: ${{ inputs.body }}
