@@ -9,13 +9,13 @@ use std::sync::OnceLock;
 use crate::behavior::Behavior;
 use crate::motion::{Course, calculate_swim_pose};
 
-/// Sixteen seconds at the upstream 15 fps: two complete cruising stroke loops.
-pub const PATROL_FRAME_COUNT: u32 = 240;
-/// Compact native canvas leaves room for a maximum-size koi to turn without resizing.
-pub const PATROL_WIDTH_PIXELS: u32 = 300;
+/// Forty-eight seconds at 15 fps: six complete upstream cruising stroke loops.
+pub const PATROL_FRAME_COUNT: u32 = 720;
+/// Full desktop README width, retaining one native pixel per displayed desktop pixel.
+pub const PATROL_WIDTH_PIXELS: u32 = 832;
 
 /// Distance between the two U-turn entry points, in native pixels.
-pub const PATROL_STRAIGHT_PIXELS: f64 = 48.0;
+pub const PATROL_STRAIGHT_PIXELS: f64 = 580.0;
 
 struct Sample {
     distance: f64,
@@ -41,28 +41,29 @@ fn samples() -> &'static [Sample] {
                     continue;
                 }
                 let t = f64::from(step) / 1024.0;
+                let end = PATROL_STRAIGHT_PIXELS / 2.0;
                 let point = match section {
-                    0 => [-24.0 + PATROL_STRAIGHT_PIXELS * t, -58.0],
+                    0 => [-end + PATROL_STRAIGHT_PIXELS * t, -58.0],
                     1 => bezier(
                         [
-                            [24.0, -58.0],
-                            [56.0, -58.0],
-                            [88.0, -58.0],
-                            [88.0, 58.0],
-                            [56.0, 58.0],
-                            [24.0, 58.0],
+                            [end, -58.0],
+                            [end + 32.0, -58.0],
+                            [end + 64.0, -58.0],
+                            [end + 64.0, 58.0],
+                            [end + 32.0, 58.0],
+                            [end, 58.0],
                         ],
                         t,
                     ),
-                    2 => [24.0 - PATROL_STRAIGHT_PIXELS * t, 58.0],
+                    2 => [end - PATROL_STRAIGHT_PIXELS * t, 58.0],
                     _ => bezier(
                         [
-                            [-24.0, 58.0],
-                            [-56.0, 58.0],
-                            [-88.0, 58.0],
-                            [-88.0, -58.0],
-                            [-56.0, -58.0],
-                            [-24.0, -58.0],
+                            [-end, 58.0],
+                            [-end - 32.0, 58.0],
+                            [-end - 64.0, 58.0],
+                            [-end - 64.0, -58.0],
+                            [-end - 32.0, -58.0],
+                            [-end, -58.0],
                         ],
                         t,
                     ),
@@ -114,7 +115,9 @@ pub fn head_distance(frame_index: u32) -> f64 {
         unreachable!("cruise follows a lap")
     };
     let cruise_turns = f64::from(frame / 120) + (angle_radians + PI / 2.0) / TAU;
-    path_length() * cruise_turns / 2.0
+    // Begin halfway through the top straight, rather than at its entry.
+    path_length() * cruise_turns / f64::from(PATROL_FRAME_COUNT / 120)
+        + PATROL_STRAIGHT_PIXELS / 2.0
 }
 
 /// A spine point trails the head by its distance along the body, not by a rotation.

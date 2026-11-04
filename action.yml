@@ -29,7 +29,7 @@ inputs:
     default: "false"
   patrol-animation:
     description:
-      Articulated 16-second back-and-forth patrol on a wider GIF canvas.
+      Articulated 48-second racetrack patrol on a full-width GIF canvas.
     default: "false"
   token:
     description:

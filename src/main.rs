@@ -31,7 +31,7 @@ dark backgrounds. BODY is white (the default), black, asagi, tea, gold, or plati
 Set FORCE_MAX_GROWTH=true to use maximum anatomy while retaining real activity and colors.
 Unset it or set false for normal growth. Other values are rejected.
 Set EXTRA_SWIM_MOTION=true for wider canvas-fitted movement in the GIF only.
-Set PATROL_ANIMATION=true for a 16-second articulated patrol on a wider GIF canvas.
+Set PATROL_ANIMATION=true for a 48-second articulated patrol on a full-width GIF canvas.
 The files are replaced only after all of them render.
 Errors go to stderr and exit 1; invalid usage exits 2.
 Examples: git-koi collect octocat --output snapshot.json

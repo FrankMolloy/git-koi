@@ -1,4 +1,8 @@
-# Articulated patrol mode (local preview, not published)
+# Articulated patrol mode
+
+For the current unpublished full-width proposal, see
+[FULL_WIDTH_PATROL.md](FULL_WIDTH_PATROL.md). The compact dimensions below
+describe the earlier preview and are retained for comparison.
 
 Set `PATROL_ANIMATION=true` for rendering, or use the Action input
 `patrol-animation: "true"`. It defaults to false. Keep `FORCE_MAX_GROWTH=true`
@@ -25,17 +29,20 @@ each end. All path positions and fin/wave phases wrap together.
 
 ## Space and behaviour
 
-The maximum native anatomy is unchanged. Patrol uses a 300 x 256 native canvas,
-exported as an 600 x 512 transparent GIF. Its still PNG stays the original 512 x
-512 maximum-growth image. Render helpers and the encoders now accept the frame
-width; ordinary frames remain 256 x 256 and ordinary output remains unchanged.
+The maximum native anatomy is unchanged. The proposed larger racetrack uses a
+360 x 256 native canvas, exported as a 720 x 512 transparent GIF. Its still PNG
+stays the original 512 x 512 maximum-growth image. Render helpers and the
+encoders now accept the frame width; ordinary frames remain 256 x 256 and
+ordinary output remains unchanged.
 
-The refined README embed is prepared locally at width 300, giving the same
-native pixel scale and 256-pixel display height as the live 256-pixel square
-animation. Straight passes shorten from 156 to 48 native pixels; the relative
-U-turn control points and lane separation remain unchanged. This compacts the
-footprint without tightening the turns. No live workflow, SHA pin or image has
-changed.
+The currently published compact patrol uses 48-pixel straight passes and a
+300-pixel README embed. This unpublished refinement lengthens the passes to 108
+pixels and shifts each turn 30 pixels outward without tightening its curve. A
+proposed 360-pixel embed preserves the live fish's desktop pixel scale and
+256-pixel display height. On a 294-pixel-wide phone content area, scale becomes
+82% rather than the current 98%. The head starts halfway through a straight; the
+trailing body can still be completing the preceding turn naturally. No live
+workflow, README, SHA pin or image has changed in this refinement.
 
 Patrol intentionally selects continuous upstream cruising movement instead of
 the activity-selected resting/feeding course. Genuine colours, pigment
@@ -66,7 +73,7 @@ The local preview uses FrankMolloy's genuine public snapshot observed on 2
 November 2026. No contributions or history are changed. Approval is required
 before committing, publishing or changing the profile's SHA pin.
 
-## Profile prominence comparison
+## Earlier compact-profile comparison
 
 The local three-way animated comparison is
 `preview-frank/prominence-comparison.html`: live (256-pixel embed), previous
@@ -83,6 +90,8 @@ scale is about 98%, compared with 71% for a full-size 416-pixel embed. Smaller
 screens can still reduce any wide image. The preview includes this constrained
 case.
 
-The profile change is a single local README width edit, preserving the image URL
-and attribution. It must be published together with a verified SHA-pinned patrol
-generator workflow when approved. Nothing has been committed or published.
+The compact version was subsequently approved and published. The new comparison
+is `preview-frank/larger-oval-comparison.html`, showing that live 300-pixel
+embed against the proposed larger racetrack at 360 pixels. The 360-pixel README
+change is only demonstrated in that preview; the profile repository remains
+untouched.
